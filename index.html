@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simulador Tutor IA - V6 (Oral & Choice)</title>
+    <title>Simulador Tutor IA - V7 (Chunking & Anki Fix)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -57,6 +57,19 @@
         .hint-box {
             background-color: #fffbeb; border-left: 4px solid #f59e0b; color: #92400e;
             padding: 12px; margin-top: 12px; font-size: 0.9rem; display: none; border-radius: 4px;
+        }
+        
+        /* NUEVO: Feedback de Flashcard Creada */
+        .flashcard-feedback {
+            display: none; /* Oculto por defecto */
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #057a55; /* green-700 */
+            background-color: #d1fae5; /* green-100 */
+            padding: 6px 10px;
+            border-radius: 6px;
+            margin-top: 10px;
+            text-align: center;
         }
 
         /* General Reused Styles */
@@ -175,7 +188,7 @@
 
                         <div id="choice-loader" class="hidden text-center">
                             <div class="loader w-6 h-6 border-2"></div>
-                            <p class="text-xs text-gray-500 mt-1">Clasificando y detectando temas flojos...</p>
+                            <p class="text-xs text-gray-500 mt-1" id="choice-loader-text">Analizando...</p>
                         </div>
 
                         <div>
@@ -203,7 +216,7 @@
                     <div id="btn-study-mode" class="mode-card">
                         <svg data-lucide="book-open" class="w-12 h-12 text-blue-600 mb-4"></svg>
                         <h3 class="text-xl font-bold">Modo Estudio Guiado</h3>
-                        <p class="text-gray-500 mt-2">Selecciona un tema específico. La IA te guiará con preguntas clave priorizadas.</p>
+                        <p class="text-gray-500 mt-2">Genera una estructura de temas inteligente usando *todo* tu material (Syllabus, Teoría y Choices).</p>
                     </div>
                     <div id="btn-exam-mode" class="mode-card">
                         <svg data-lucide="swords" class="w-12 h-12 text-red-600 mb-4"></svg>
@@ -215,8 +228,12 @@
                 <!-- Contenedores ocultos para la lógica existente (simplificada visualmente) -->
                 <div id="study-container" class="hidden">
                     <button id="back-mode-1" class="mb-4 text-sm text-blue-600 font-bold flex items-center"><svg data-lucide="arrow-left" class="w-4 h-4 mr-1"></svg> Volver</button>
-                    <h2 class="text-2xl font-bold mb-4">Elige un tema para estudiar:</h2>
-                    <div id="syllabus-browser" class="bg-gray-50 p-4 rounded-lg max-h-[400px] overflow-y-auto"></div>
+                    <h2 class="text-2xl font-bold mb-4">Estructura de Temas (IA)</h2>
+                    <p class="text-sm text-gray-500 mb-4 -mt-2">Esta estructura se genera usando tu Syllabus, Teoría y Exámenes Choice.</p>
+                    <div id="syllabus-browser" class="bg-gray-50 p-4 rounded-lg max-h-[400px] overflow-y-auto">
+                        <div class="loader"></div>
+                        <p class="text-center text-gray-500">Analizando todo el material...</p>
+                    </div>
                     <div id="study-output" class="mt-6 space-y-6"></div>
                 </div>
 
@@ -236,7 +253,7 @@
                 <div class="flex justify-between items-center bg-blue-50 p-4 rounded-lg border border-blue-100">
                     <div>
                         <h2 class="text-lg font-bold text-blue-900">Repaso Espaciado (SRS)</h2>
-                        <p class="text-sm text-blue-700">Tarjetas programadas para hoy.</p>
+                        <p class="text-sm text-blue-700">Tarjetas de "Modo Oral" y flashcards de errores de "Modo Choice".</p>
                     </div>
                     <div class="text-right">
                         <span id="review-count" class="text-3xl font-extrabold text-blue-600">0</span>
@@ -250,7 +267,7 @@
 
             <!-- TAB: UNIDADES -->
             <div id="tab-units" class="tab-panel space-y-6">
-                <h2 class="text-xl font-bold text-gray-800">Banco de Preguntas</h2>
+                <h2 class="text-xl font-bold text-gray-800">Banco de Preguntas (Oral/Flashcards)</h2>
                 <p class="text-gray-600">Todas tus preguntas (Orales y Flashcards generadas) organizadas.</p>
                 <div id="units-progress-ui" class="hidden mb-4">
                     <div class="progress-bar-container"><div id="units-total-bar" class="progress-bar-fill" style="width: 0%"></div></div>
@@ -262,7 +279,7 @@
             <!-- TAB: HOJA de RUTA -->
             <div id="tab-roadmap" class="tab-panel space-y-6">
                 <h2 class="text-xl font-bold text-gray-800">Futuro</h2>
-                <p class="text-gray-600">Cronograma de tus próximos repasos.</p>
+                <p class="text-gray-600">Cronograma de tus próximos repasos (Orales y Flashcards).</p>
                 <div id="roadmap-list" class="space-y-6"></div>
             </div>
 
@@ -312,6 +329,7 @@
         let currentPracticeTopic = null;
         let currentPracticeQuestions = [];
         let currentQuestionIndex = 0;
+        let isFlashcardCreated = false; // NUEVO: Flag para evitar duplicados
 
         // --- ELEMENTOS DOM ---
         const els = {
@@ -325,6 +343,7 @@
             choiceRaw: document.getElementById('choice-raw'),
             analyzeBtn: document.getElementById('analyze-choice-btn'),
             choiceLoader: document.getElementById('choice-loader'),
+            choiceLoaderText: document.getElementById('choice-loader-text'), // NUEVO
             choiceList: document.getElementById('choice-topics-list'),
             practiceArea: document.getElementById('choice-practice-area'),
             // Oral
@@ -425,14 +444,19 @@
             });
         }
 
-        async function createSubject() {
-            const name = els.newSubjectInput.value.trim();
-            if (!name) return;
-            await setDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', name), { created: serverTimestamp() });
-            await loadSubjects();
-            els.subjectSelect.value = name;
-            changeSubject();
-        }
+async function createSubject() {
+    const name = els.newSubjectInput.value.trim();
+    if (!name) return;
+    try {
+        await setDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', name), { created: serverTimestamp() });
+        await loadSubjects();
+        els.subjectSelect.value = name;
+        changeSubject();
+    } catch (e) {
+        console.error("Error creating subject: ", e);
+        showError("Error al crear la materia. Revisa la consola.");
+    }
+}
 
         function changeSubject() {
             currentSubject = els.subjectSelect.value;
@@ -444,6 +468,7 @@
             // Limpiar estados de vistas
             els.choiceList.innerHTML = '';
             els.practiceArea.innerHTML = '<p class="text-gray-400">Selecciona un tema.</p>';
+            els.syllabusBrowser.innerHTML = '<p class="text-gray-400">Cargando...</p>'; // Resetear syllabus browser
         }
 
         // --- LÓGICA MATERIAL (PDF & SAVE) ---
@@ -497,9 +522,29 @@
 
         async function loadMaterialFields() {
             ['syllabus', 'theory', 'experiences'].forEach(async (key) => {
-                const d = await getDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'materials', key));
-                document.getElementById(key).value = d.exists() ? d.data().content : '';
+                try {
+                    const d = await getDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'materials', key));
+                    document.getElementById(key).value = d.exists() ? d.data().content : '';
+                } catch(e) {
+                    console.warn(`No se pudo cargar material: ${key}`, e);
+                    document.getElementById(key).value = ''; // Limpiar en caso de error
+                }
             });
+        }
+        
+        // --- NUEVA FUNCIÓN DE PARTCIONADO (CHUNKING) ---
+        /**
+         * Divide un texto largo en trozos más pequeños.
+         * @param {string} text - El texto completo.
+         * @param {number} [size=15000] - El tamaño máximo de cada trozo.
+         * @returns {string[]} - Un array de trozos de texto.
+         */
+        function chunkText(text, size = 15000) {
+            const chunks = [];
+            for (let i = 0; i < text.length; i += size) {
+                chunks.push(text.substring(i, i + size));
+            }
+            return chunks;
         }
 
         // --- MODO CHOICE (LÓGICA COMPLETA) ---
@@ -516,12 +561,27 @@
                 // 1. Obtener contexto
                 const syllabus = document.getElementById('syllabus').value;
                 const theory = document.getElementById('theory').value;
+                
+                // 2. NUEVO: Particionar el texto crudo
+                const textChunks = chunkText(rawText);
+                let allParsedQuestions = [];
+                
+                els.choiceLoaderText.textContent = `Analizando trozo 1 de ${textChunks.length}...`;
 
-                // 2. Llamada a Gemini para Parsear
-                const parsedQuestions = await callGeminiForChoice(rawText, syllabus, theory);
+                // 3. NUEVO: Loop a través de los trozos
+                for (let i = 0; i < textChunks.length; i++) {
+                    els.choiceLoaderText.textContent = `Analizando trozo ${i + 1} de ${textChunks.length}...`;
+                    const chunk = textChunks[i];
+                    
+                    // Llamada a Gemini para Parsear este trozo
+                    const parsedQuestions = await callGeminiForChoice(chunk, syllabus, theory);
+                    allParsedQuestions = allParsedQuestions.concat(parsedQuestions);
+                }
+                
+                els.choiceLoaderText.textContent = `Guardando ${allParsedQuestions.length} preguntas...`;
 
-                // 3. Guardar en Firestore (colección saved_mcq)
-                const batchPromises = parsedQuestions.map(q => 
+                // 4. Guardar en Firestore (colección saved_mcq)
+                const batchPromises = allParsedQuestions.map(q => 
                     addDoc(collection(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'saved_mcq'), {
                         ...q,
                         createdAt: serverTimestamp(),
@@ -530,12 +590,9 @@
                 );
                 await Promise.all(batchPromises);
 
-                // 4. ANÁLISIS DE DEBILIDADES Y GENERACIÓN DE FLASHCARDS (Bonus)
-                await analyzeWeaknessesAndGenerateFlashcards(parsedQuestions, syllabus, theory);
-
                 // 5. Refrescar UI
                 els.choiceRaw.value = '';
-                showError(`¡Éxito! Se clasificaron ${parsedQuestions.length} preguntas. Revisa también la pestaña 'Repasar' para ver las nuevas flashcards de refuerzo.`, false);
+                showError(`¡Éxito! Se clasificaron ${allParsedQuestions.length} preguntas.`, false);
                 loadChoiceTopics();
 
             } catch (err) {
@@ -544,6 +601,7 @@
             } finally {
                 els.analyzeBtn.disabled = false;
                 els.choiceLoader.classList.add('hidden');
+                els.choiceLoaderText.textContent = "Analizando..."; // Reset
             }
         }
 
@@ -557,8 +615,8 @@
         async function callGeminiForChoice(examText, syllabus, theory) {
             const prompt = `
                 Analiza este texto de examen Choice.
-                Contexto Syllabus: ${syllabus.substring(0, 3000)}...
-                Contexto Teoría: ${theory.substring(0, 3000)}...
+                Contexto Syllabus: ${syllabus.substring(0, 2000)}...
+                Contexto Teoría: ${theory.substring(0, 2000)}...
                 
                 Texto Examen: ${examText}
 
@@ -603,68 +661,8 @@
             // --- FIN DE LA CORRECCIÓN ROBUSTA v3 ---
         }
 
-        async function analyzeWeaknessesAndGenerateFlashcards(mcqs, syllabus, theory) {
-            // 1. Contar frecuencia de temas
-            const counts = {};
-            mcqs.forEach(q => { counts[q.topic] = (counts[q.topic] || 0) + 1; });
-            
-            // 2. Top 3 temas más frecuentes (asumimos que son los "importantes/flojos")
-            const weakTopics = Object.entries(counts).sort((a,b) => b[1] - a[1]).slice(0, 3).map(e => e[0]);
-            
-            if(weakTopics.length === 0) return;
-
-            // 3. Generar Flashcards de memorización
-            const prompt = `
-                Temas débiles detectados en el examen: ${weakTopics.join(', ')}.
-                Contexto Teoría: ${theory.substring(0, 5000)}...
-                
-                Genera 2 "Flashcards" de memorización (Pregunta y Respuesta directa, NO choice) para CADA tema.
-                Total 6 tarjetas.
-                Formato JSON Array: [{ "topic": "...", "question": "...", "answer": "..." }]
-            `;
-            
-            try {
-                let txt = await callGeminiAPI(prompt, true);
-                let cards;
-                
-                // --- INICIO DE LA CORRECCIÓN ROBUSTA v3 ---
-                try {
-                    // Paso 1: Limpiar escapes de corchetes
-                    txt = txt.replace(/\\\[/g, '[').replace(/\\\]/g, ']');
-                    
-                    // Paso 2: Extraer el JSON del texto
-                    const jsonMatch = txt.match(/\[\s*\{.*\}\s*\]/s); // Busca [{...}]
-                    let jsonToParse;
-                    if (jsonMatch && jsonMatch[0]) {
-                        jsonToParse = jsonMatch[0];
-                    } else {
-                        jsonToParse = txt;
-                    }
-                    
-                    // Paso 3: Parsear
-                    cards = JSON.parse(jsonToParse);
-                    
-                } catch (e) {
-                    console.warn("Falló la extracción de JSON (flashcards)", e, "Respuesta original:", txt);
-                    throw new Error("La IA devolvió un JSON de flashcards malformado.");
-                }
-                // --- FIN DE LA CORRECCIÓN ROBUSTA v3 ---
-
-                // Guardar en saved_questions (Sistema SRS existente)
-                const promises = cards.map(c => 
-                    addDoc(collection(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'saved_questions'), {
-                        topic: c.topic,
-                        question: c.question,
-                        answer: c.answer,
-                        unit: "Refuerzo Automático",
-                        reviewStep: 0,
-                        nextReviewDate: serverTimestamp(), // Disponible ya
-                        createdAt: serverTimestamp()
-                    })
-                );
-                await Promise.all(promises);
-            } catch(e) { console.warn("Error generando flashcards auto:", e); }
-        }
+        // --- FUNCIÓN ELIMINADA ---
+        // 'analyzeWeaknessesAndGenerateFlashcards' se eliminó.
 
         async function loadChoiceTopics() {
             const q = query(collection(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'saved_mcq'));
@@ -674,9 +672,10 @@
             // Agrupar por tema
             const topics = {};
             cachedMcqs.forEach(m => {
-                if(!topics[m.topic]) topics[m.topic] = { total: 0, mastered: 0, name: m.topic };
-                topics[m.topic].total++;
-                if(m.status === 'mastered') topics[m.topic].mastered++;
+                const topicName = m.topic || "Sin Clasificar"; // NUEVO: Manejar temas nulos
+                if(!topics[topicName]) topics[topicName] = { total: 0, mastered: 0, name: topicName };
+                topics[topicName].total++;
+                if(m.status === 'mastered') topics[topicName].mastered++;
             });
 
             els.choiceList.innerHTML = '';
@@ -686,7 +685,7 @@
                  return;
             }
             
-            Object.values(topics).forEach(t => {
+            Object.values(topics).sort((a,b) => a.name.localeCompare(b.name)).forEach(t => { // NUEVO: Ordenar alfabéticamente
                 const pct = Math.round((t.mastered / t.total) * 100);
                 const div = document.createElement('div');
                 div.className = 'p-3 bg-white border rounded hover:bg-gray-50 cursor-pointer transition';
@@ -704,9 +703,9 @@
 
         function startPractice(topic) {
             currentPracticeTopic = topic;
-            currentPracticeQuestions = cachedMcqs.filter(m => m.topic === topic && m.status !== 'mastered');
+            currentPracticeQuestions = cachedMcqs.filter(m => (m.topic || "Sin Clasificar") === topic && m.status !== 'mastered');
             // Si ya completó todo, permitir repasar todo
-            if(currentPracticeQuestions.length === 0) currentPracticeQuestions = cachedMcqs.filter(m => m.topic === topic);
+            if(currentPracticeQuestions.length === 0) currentPracticeQuestions = cachedMcqs.filter(m => (m.topic || "Sin Clasificar") === topic);
             
             // Shuffle simple
             currentPracticeQuestions.sort(() => Math.random() - 0.5);
@@ -727,18 +726,22 @@
                 return;
             }
 
+            isFlashcardCreated = false; // Resetear el flag
             const q = currentPracticeQuestions[currentQuestionIndex];
             
+            // Asegurarse de que las opciones sean un array
+            const options = Array.isArray(q.options) ? q.options : [q.options];
+
             els.practiceArea.innerHTML = `
                 <div class="w-full max-w-2xl bg-white p-6 rounded-xl shadow-sm border border-gray-200 text-left">
                     <div class="flex justify-between text-xs text-gray-400 mb-2">
-                        <span>${q.topic}</span>
+                        <span>${q.topic || "Sin Clasificar"}</span>
                         <span>Pregunta ${currentQuestionIndex + 1} de ${currentPracticeQuestions.length}</span>
                     </div>
                     <h3 class="text-lg font-bold text-gray-800 mb-6">${q.question}</h3>
                     
                     <div id="mcq-options">
-                        ${q.options.map(opt => `<div class="mcq-option" onclick="selectOption(this, '${opt.replace(/'/g, "\\'")}')">${opt}</div>`).join('')}
+                        ${options.map(opt => `<div class="mcq-option" onclick="selectOption(this, '${String(opt).replace(/'/g, "\\'")}')">${opt}</div>`).join('')}
                     </div>
 
                     <div class="mt-6 flex justify-between items-center">
@@ -750,7 +753,11 @@
                     
                     <div id="hint-box" class="hint-box"></div>
                     <div id="justification-box" class="mt-4 p-4 bg-blue-50 text-blue-800 rounded hidden text-sm">
-                        <strong>Explicación:</strong> ${q.justification}
+                        <strong>Explicación:</strong> ${q.justification || "No disponible."}
+                    </div>
+                    <!-- NUEVO: Feedback de Flashcard -->
+                    <div id="flashcard-feedback" class="flashcard-feedback">
+                        ¡Respuesta incorrecta! Se creó una flashcard en "Repasar (Hoy)".
                     </div>
                 </div>
             `;
@@ -780,7 +787,7 @@
             // Deshabilitar clics
             document.querySelectorAll('.mcq-option').forEach(o => o.style.pointerEvents = 'none');
             
-            const isCorrect = selectedText.trim() === qData.correctAnswer.trim();
+            const isCorrect = selectedText.trim() === String(qData.correctAnswer).trim();
             
             if (isCorrect) {
                 el.classList.add('correct');
@@ -794,8 +801,16 @@
                 // Resaltar la correcta
                 const options = document.querySelectorAll('.mcq-option');
                 options.forEach(opt => {
-                    if (opt.textContent.trim() === qData.correctAnswer.trim()) opt.classList.add('correct');
+                    if (opt.textContent.trim() === String(qData.correctAnswer).trim()) opt.classList.add('correct');
                 });
+                
+                // --- NUEVO: Crear Flashcard por error ---
+                if (!isFlashcardCreated) {
+                    isFlashcardCreated = true;
+                    await createFlashcardFromWrongAnswer(qData);
+                    document.getElementById('flashcard-feedback').style.display = 'block';
+                }
+                // --- FIN ---
             }
 
             // Mostrar justificación
@@ -807,7 +822,34 @@
             nextBtn.classList.remove('bg-gray-200', 'text-gray-400', 'cursor-not-allowed');
             nextBtn.classList.add('bg-blue-600', 'text-white', 'hover:bg-blue-700');
         }
-
+        
+        // --- NUEVA FUNCIÓN ANKI-POR-ERROR ---
+        /**
+         * Crea una flashcard en la colección 'saved_questions' (SRS)
+         * cuando un usuario falla una pregunta de Choice.
+         * @param {Object} qData - La data de la pregunta de MCQ.
+         */
+        async function createFlashcardFromWrongAnswer(qData) {
+            if (!currentSubject) return;
+            
+            try {
+                const flashcard = {
+                    question: qData.question, // La pregunta del choice
+                    answer: `<b>Respuesta Correcta:</b> ${qData.correctAnswer}<br><br><b>Justificación:</b> ${qData.justification || "Sin justificación."}`,
+                    unit: qData.unit || "Choice",
+                    topic: qData.topic || "Sin Clasificar",
+                    reviewStep: 0,
+                    nextReviewDate: serverTimestamp(), // Ponerla al inicio de la cola de repaso
+                    createdAt: serverTimestamp()
+                };
+                
+                await addDoc(collection(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'saved_questions'), flashcard);
+                console.log("Flashcard creada por error:", qData.question);
+            } catch (e) {
+                console.error("Error al crear flashcard por error:", e);
+            }
+        }
+        
         // --- SISTEMA DE REPASO (SRS - Lógica Anki simplificada) ---
 
         function setupReviewListener() {
@@ -819,6 +861,9 @@
                 const cards = snap.docs.map(d => ({id: d.id, ...d.data()}));
                 els.reviewCount.textContent = cards.length;
                 renderReviewCards(cards);
+            }, (error) => {
+                console.error("Error en listener de 'Repasar':", error);
+                els.reviewList.innerHTML = "<p class='text-red-500'>Error al cargar. Revisa la consola.</p>";
             });
         }
 
@@ -903,25 +948,95 @@
                     div.innerHTML = `<span class="text-sm font-medium">${data.topic || 'General'}</span><span class="text-xs bg-gray-100 px-2 py-1 rounded text-gray-600">${date}</span>`;
                     container.appendChild(div);
                 });
+            }, (error) => {
+                 console.error("Error en listener de 'Hoja de Ruta':", error);
+                 document.getElementById('roadmap-list').innerHTML = "<p class='text-red-500'>Error al cargar.</p>";
             });
         }
 
-        // --- MODOS ORALES (Reducidos para brevedad, lógica igual) ---
-        function loadSyllabusBrowser() {
-            // Simplificado: Lee el syllabus y hace lista básica
-            const text = document.getElementById('syllabus').value;
+        // --- MODOS ORALES (Estructura de Temas Mejorada) ---
+        
+        /**
+         * NUEVO: Carga la estructura de temas usando TODO el material.
+         */
+        async function loadSyllabusBrowser() {
             const container = document.getElementById('syllabus-browser');
-            if(!text) { container.innerHTML = "Carga el syllabus primero."; return; }
+            container.innerHTML = `<div class="loader mx-auto"></div><p class="text-center text-gray-500">Analizando Syllabus, Teoría y Choices para crear la estructura...</p>`;
+
+            try {
+                // 1. Obtener todo el material
+                const syllabus = document.getElementById('syllabus').value;
+                const theory = document.getElementById('theory').value;
+                const choiceRaw = els.choiceRaw.value; // ¡NUEVO!
+                
+                const fullContext = `
+                    --- PLAN DE ESTUDIO ---
+                    ${syllabus}
+                    
+                    --- TEORÍA / APUNTES ---
+                    ${theory}
+                    
+                    --- EXÁMENES CHOICE ---
+                    ${choiceRaw}
+                `;
+
+                // 2. Llamar a la IA para parsear
+                const structuredSyllabus = await parseSyllabusWithAI(fullContext);
+
+                // 3. Renderizar (reutilizando la lógica de antes)
+                container.innerHTML = ''; // Limpiar loader
+                structuredSyllabus.forEach(unit => {
+                    const div = document.createElement('div');
+                    div.innerHTML = `<button class="unit-toggle-btn text-lg">${unit.unit}</button>`;
+                    const topicsContainer = document.createElement('div');
+                    topicsContainer.className = 'unit-topics-container';
+                    topicsContainer.innerHTML = unit.topics.map(t => 
+                        `<div class="p-2 hover:bg-blue-50 cursor-pointer border-b" onclick="alert('Función de estudio guiado para: ${t}')">${t}</div>`
+                    ).join('');
+                    div.appendChild(topicsContainer);
+                    container.appendChild(div);
+                });
+                
+                // Añadir listener de acordeón
+                container.querySelectorAll('.unit-toggle-btn').forEach(btn => {
+                    btn.onclick = () => btn.nextElementSibling.classList.toggle('open');
+                });
+                
+            } catch (e) {
+                console.error("Error al parsear syllabus con IA:", e);
+                container.innerHTML = `<p class="text-red-500">Error al generar la estructura de temas: ${e.message}</p>`;
+            }
+        }
+        
+        /**
+         * NUEVO: Función de parseo de IA (Modo Estudio)
+         */
+        async function parseSyllabusWithAI(fullMaterial) {
+             const prompt = `
+                Analiza todo el material de estudio (Plan de Estudio, Teoría y Exámenes) y genera una estructura de temas (Unidades y Temas).
+                Material: ${fullMaterial.substring(0, 25000)}...
+                
+                Responde SOLO con un JSON Array: [{ "unit": "Nombre Unidad", "topics": ["Tema 1", "Tema 2", ...] }]
+            `;
+            let txt = await callGeminiAPI(prompt, true);
             
-            // Regex simple para detectar líneas cortas como temas
-            const lines = text.split('\n').filter(l => l.length > 5 && l.length < 100).slice(0, 10); // Demo top 10 lines
-            container.innerHTML = lines.map(l => `<div class="p-2 hover:bg-blue-50 cursor-pointer border-b" onclick="alert('Función completa en desarrollo: Aquí generaríamos guía para: ${l}')">${l}</div>`).join('');
+            // Reutilizamos la lógica de parseo robusta
+            try {
+                txt = txt.replace(/\\\[/g, '[').replace(/\\\]/g, ']');
+                const jsonMatch = txt.match(/\[\s*\{.*\}\s*\]/s); 
+                let jsonToParse = (jsonMatch && jsonMatch[0]) ? jsonMatch[0] : txt;
+                return JSON.parse(jsonToParse);
+            } catch(e) {
+                 console.error("Falló el parseo de syllabus con IA:", e, "Respuesta original:", txt);
+                 throw new Error("La IA devolvió una estructura de temas malformada.");
+            }
         }
 
         function resetModes() {
             els.studyContainer.classList.add('hidden');
             els.examContainer.classList.add('hidden');
             els.modeSelection.classList.remove('hidden');
+            els.syllabusBrowser.innerHTML = '<p class="text-gray-400">Cargando...</p>'; // Resetear
         }
         
         async function generateOralExam() {
@@ -949,10 +1064,13 @@
                 try {
                     const resp = await fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
                     if (!resp.ok) {
+                        const errorBody = await resp.text();
+                        console.error("Error API:", errorBody);
                         throw new Error(`Error de API: ${resp.status}`);
                     }
                     const json = await resp.json();
                     if (!json.candidates || !json.candidates[0].content) {
+                         console.warn("Respuesta inválida:", json);
                          throw new Error("Respuesta de IA inválida (sin 'candidates')");
                     }
                     return json.candidates[0].content.parts[0].text;
