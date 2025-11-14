@@ -565,7 +565,17 @@
             `;
             
             const txt = await callGeminiAPI(prompt, true); // true = force JSON
-            return JSON.parse(txt);
+            try {
+                // Intento 1: Parsear directamente
+                return JSON.parse(txt);
+            } catch (e) {
+                // Intento 2: Sanitizar caracteres de control y re-intentar
+                console.warn("JSON parse falló. Re-intentando con sanitización de newlines.");
+                // Reemplaza newlines y carriage returns literales por sus versiones escapadas
+                const sanitizedTxt = txt.replace(/\n/g, "\\n").replace(/\r/g, "\\r");
+                // Dejar que esto falle si vuelve a fallar, para ver el error real
+                return JSON.parse(sanitizedTxt); 
+            }
         }
 
         async function analyzeWeaknessesAndGenerateFlashcards(mcqs, syllabus, theory) {
@@ -589,7 +599,18 @@
             `;
             
             try {
-                const cards = JSON.parse(await callGeminiAPI(prompt, true));
+                const txt = await callGeminiAPI(prompt, true);
+                let cards;
+                try {
+                    // Intento 1: Parsear directamente
+                    cards = JSON.parse(txt);
+                } catch (e) {
+                    // Intento 2: Sanitizar
+                    console.warn("JSON parse falló (flashcards). Re-intentando con sanitización.");
+                    const sanitizedTxt = txt.replace(/\n/g, "\\n").replace(/\r/g, "\\r");
+                    cards = JSON.parse(sanitizedTxt);
+                }
+
                 // Guardar en saved_questions (Sistema SRS existente)
                 const promises = cards.map(c => 
                     addDoc(collection(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'saved_questions'), {
